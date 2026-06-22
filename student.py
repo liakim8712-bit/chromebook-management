@@ -99,24 +99,23 @@ with st.sidebar:
         target_id = st.selectbox("대상 크롬북(CEU)", device_options, format_func=lambda x: device_labels.get(x, x))
         current_row = st.session_state.df[st.session_state.df['기기번호'] == target_id].iloc[0]
         
-        clean_status = str(current_row['상태']).replace(" N", "")
+        new_status = str(current_row['상태'])
         status_list = ["이상 없음", "대여 중", "파손/점검", "분실"]
-        status_index = status_list.index(clean_status) if clean_status in status_list else 0
+        status_index = status_list.index(new_status) if new_status in status_list else 0
         
         new_status = st.radio("상태 변경", status_list, index=status_index)
         
-        # 💡 [개선 기능] placeholder를 활용해 클릭 시 글자가 자동으로 비워지도록 제어
+        # placeholder 가이드 글자 자동 비우기 로직
         placeholder_val = ""
         current_note_value = str(current_row['특이사항']) if current_row['특이사항'] != "-" else ""
         
         if new_status == "대여 중" and "반납예정일" not in current_note_value:
             placeholder_val = "[반납예정일: YYYY-MM-DD]"
-            current_note_value = "" # 값을 비워주어 placeholder가 작동하도록 유도
+            current_note_value = "" 
 
         new_note = st.text_input("특이사항", value=current_note_value, placeholder=placeholder_val)
         
         if st.button("💾 변경사항 저장", use_container_width=True):
-            # 입력 확인 단계
             final_note = new_note if new_note else (placeholder_val if placeholder_val else "-")
             if new_status == "대여 중" and not new_note:
                 st.error("⚠️ 대여 중일 때는 반드시 반납 예정 날짜를 입력해 주세요!")
@@ -129,17 +128,33 @@ with st.sidebar:
                 st.success(f"{current_row['이름']} 학생 기기 수정 완료!")
                 st.rerun()
 
-# 💡 대시보드 메인 타이틀 옆의 (N) 마크 영구 제거 완료
 st.title("💻 상북중 크롬북 통합 현황판")
 
 df = st.session_state.df.copy()
-df['상태_클린'] = df['상태'].str.replace(" N", "")
 
+# --- 💡 대시보드용 실시간 N 마크 판단 로직 ---
+df['최종수정_dt'] = pd.to_datetime(df['최종수정'], format="%Y-%m-%d %H:%M")
+
+has_recent_rent = False
+has_recent_damage = False
+
+for idx, row in df.iterrows():
+    # 5분 이내에 수정 이력이 있는 기기 감지
+    if datetime.now() - row['최종수정_dt'] < timedelta(minutes=5):
+        if row['상태'] == "대여 중":
+            has_recent_rent = True
+        elif row['상태'] in ["파손/점검", "분실"]:
+            has_recent_damage = True
+
+rent_label = "🏠 대여중 N" if has_recent_rent else "🏠 대여중"
+damage_label = "🚨 점검/분실 N" if has_recent_damage else "🚨 점검/분실"
+
+# 대시보드 지표 출력 (요청하신 글자 옆에 N 연동 완료)
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("전체 기기", f"{len(df)}대")
-col2.metric("🟢 정상", f"{len(df[df['상태_클린']=='이상 없음'])}대")
-col3.metric("🏠 대여중", f"{len(df[df['상태_클린']=='대여 중'])}대")
-col4.metric("🚨 점검/분실", f"{len(df[df['상태_클린'].isin(['파손/점검', '분실'])])}대")
+col2.metric("🟢 정상", f"{len(df[df['상태']=='이상 없음'])}대")
+col3.metric(rent_label, f"{len(df[df['상태']=='대여 중'])}대")
+col4.metric(damage_label, f"{len(df[df['상태'].isin(['파손/점검', '분실'])])}대")
 
 st.divider()
 
@@ -149,32 +164,22 @@ if f2.button("🟢 정상만", use_container_width=True): st.session_state.filte
 if f3.button("🏠 대여중만", use_container_width=True): st.session_state.filter_mode = "대여 중"
 if f4.button("🚨 점검필요", use_container_width=True): st.session_state.filter_mode = "점검필요"
 
-# --- 표 내부 " N" 마크 노출 프로세스 ---
+# 필터링 적용 및 테이블 노출
 view_df = df.copy()
-view_df['최종수정_dt'] = pd.to_datetime(view_df['최종수정'], format="%Y-%m-%d %H:%M")
-
-for idx, row in view_df.iterrows():
-    # 💡 수정한 지 5분 이내 데이터의 개별 상태 뒤에만 정확히 " N"을 붙여줌
-    if datetime.now() - row['최종수정_dt'] < timedelta(minutes=5):
-        if not str(row['상태']).endswith(" N"):
-            view_df.at[idx, '상태'] = f"{row['상태_클린']} N"
-    else:
-        view_df.at[idx, '상태'] = row['상태_클린']
-
 if st.session_state.filter_mode == "이상 없음":
-    view_df = view_df[view_df['상태_클린'] == "이상 없음"]
+    view_df = view_df[view_df['상태'] == "이상 없음"]
 elif st.session_state.filter_mode == "대여 중":
-    view_df = view_df[view_df['상태_클린'] == "대여 중"]
+    view_df = view_df[view_df['상태'] == "대여 중"]
 elif st.session_state.filter_mode == "점검필요":
-    view_df = view_df[view_df['상태_클린'].isin(["파손/점검", "분실"])]
+    view_df = view_df[view_df['상태'].isin(["파손/점검", "분실"])]
 
 view_df = view_df[["기기번호", "학급", "번호", "이름", "상태", "특이사항", "최종수정"]]
 
 def style_status(row):
     color = ''
-    if "이상 없음" in row['상태']: color = 'background-color: #f0fff4; color: #22543d'
-    elif "대여 중" in row['상태']: color = 'background-color: #ebf8ff; color: #2a4365'
-    elif any(x in row['상태'] for x in ["파손/점검", "분실"]): color = 'background-color: #fff5f5; color: #742a2a; font-weight: bold'
+    if row['상태'] == "이상 없음": color = 'background-color: #f0fff4; color: #22543d'
+    elif row['상태'] == "대여 중": color = 'background-color: #ebf8ff; color: #2a4365'
+    elif row['상태'] in ["파손/점검", "분실"]: color = 'background-color: #fff5f5; color: #742a2a; font-weight: bold'
     return [color] * len(row)
 
 st.dataframe(
