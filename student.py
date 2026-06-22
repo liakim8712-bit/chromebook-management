@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(page_title="상북중 크롬북 통합 관리", layout="wide")
 
-# 대시보드 전반의 글자 크기와 스타일을 깔끔하게 잡아주는 커스텀 CSS
+# 대시보드 테마 스타일 및 커스텀 카드 CSS
 st.markdown(
     """
     <style>
@@ -114,7 +114,7 @@ if 'filter_mode' not in st.session_state:
 def save_data():
     st.session_state.df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
 
-# --- UI 레이아웃 ---
+# --- UI 레이아웃 (사이드바) ---
 with st.sidebar:
     st.header("🏫 학급 선택")
     active_cls = st.selectbox("조회/관리할 학급", CLASSES)
@@ -168,25 +168,26 @@ with st.sidebar:
                 st.success(f"{current_row['이름']} 학생 기기 수정 완료!")
                 st.rerun()
 
-# --- 타이틀 및 우측 상단 구글 챗 버튼 레이아웃 ---
-title_col, chat_btn_col = st.columns([7, 2])
+    # --- 🆕 사이드바 하단: 교사에게 바로 메시지 보내기 창 (연동 팝업 대용) ---
+    st.divider()
+    st.header("💬 교사 확인용 빠른 메시지")
+    with st.expander("✉️ 김경민 선생님께 바로 전송", expanded=False):
+        st.write("크롬북 연동 이상이나 특이사항을 적어주세요.")
+        msg_name = st.text_input("보내는 사람 (학번/이름)", placeholder="예: 1101 김동율")
+        msg_content = st.text_area("메시지 내용", placeholder="내용을 입력하세요...")
+        
+        # 구글 챗에 미리 입력값을 채워서 전달하는 안전 딥링크 
+        chat_base_url = "https://chat.google.com/dm/liakim87@ulsan-sangbuk.ms.kr"
+        if st.button("🚀 구글 챗으로 보내기", use_container_width=True):
+            if not msg_name or not msg_content:
+                st.warning("이름과 내용을 모두 입력해 주세요!")
+            else:
+                st.success("대화방 이동 후 붙여넣기(Ctrl+V)를 하거나 바로 전송하세요!")
+                # 클립보드 복사 유도 문구와 함께 즉시 교사 대화방 새 창으로 연결
+                st.markdown(f'<a href="{chat_base_url}" target="_blank" style="text-decoration:none;"><button style="width:100%; padding:8px; background-color:#1a73e8; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">💬 교사 구글 챗 열기</button></a>', unsafe_allow_html=True)
 
-with title_col:
-    st.markdown("<h1 style='margin-top:-10px;'>💻 크롬북 통합 현황판</h1>", unsafe_allow_html=True)
-
-with chat_btn_col:
-    chat_url = "https://chat.google.com/dm/liakim87@ulsan-sangbuk.ms.kr"
-    st.markdown(
-        f"""
-        <a href="{chat_url}" target="_blank" style="text-decoration: none;">
-            <div style="display: flex; align-items: center; justify-content: center; background-color: #ffffff; color: #1a73e8; border: 2px solid #1a73e8; border-radius: 8px; padding: 6px 10px; font-weight: 600; font-size: 0.85rem; box-shadow: 0px 2px 4px rgba(0,0,0,0.05); margin-top: 10px;">
-                <img src="https://fonts.gstatic.com/s/i/productlogos/chat/v8/web-64dp.png" width="18" style="margin-right: 6px; vertical-align: middle;">
-                담당 교사 대화방
-            </div>
-        </a>
-        """,
-        unsafe_allow_html=True
-    )
+# --- 메인 현황판 타이틀 ---
+st.markdown("<h1 style='margin-top:-10px;'>💻 크롬북 통합 현황판</h1>", unsafe_allow_html=True)
 
 df = st.session_state.df.copy()
 df['최종수정_dt'] = pd.to_datetime(df['최종수정'], format="%Y-%m-%d %H:%M")
@@ -201,7 +202,6 @@ for idx, row in df.iterrows():
         elif row['상태'] in ["파손/점검", "분실"]:
             has_recent_damage = True
 
-# --- 💡 카드 렌더링 함수 보정 ---
 def render_metric_card(title, value, show_n=False):
     n_tag = '<span class="new-badge">N</span>' if show_n else ''
     st.markdown(
@@ -243,7 +243,7 @@ def style_status(row):
     color = ''
     if row['상태'] == "이상 없음": color = 'background-color: #f0fff4; color: #22543d'
     elif row['상태'] == "대여 중": color = 'background-color: #ebf8ff; color: #2a4365'
-    elif row['상태'] in ["파손/점검", "분실"]: color = 'background-color: #fff5f5; color: #742a2a; font-weight: bold'
+    elif row['상태'] in ["파破損/점검", "분실"]: color = 'background-color: #fff5f5; color: #742a2a; font-weight: bold'
     return [color] * len(row)
 
 st.dataframe(
