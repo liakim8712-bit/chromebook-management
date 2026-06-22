@@ -132,7 +132,7 @@ st.title("💻 상북중 크롬북 통합 현황판")
 
 df = st.session_state.df.copy()
 
-# --- 💡 대시보드용 실시간 N 마크 판단 로직 ---
+# --- 대시보드용 실시간 N 마크 판단 로직 ---
 df['최종수정_dt'] = pd.to_datetime(df['최종수정'], format="%Y-%m-%d %H:%M")
 
 has_recent_rent = False
@@ -146,10 +146,12 @@ for idx, row in df.iterrows():
         elif row['상태'] in ["파손/점검", "분실"]:
             has_recent_damage = True
 
-rent_label = "🏠 대여중 N" if has_recent_rent else "🏠 대여중"
-damage_label = "🚨 점검/분실 N" if has_recent_damage else "🚨 점검/분실"
+# 💡 대시보드 메트릭 라벨에 HTML 마크다운을 결합할 수 없으므로, 대신 이모지와 별도 텍스트 구성법 사용 
+# 대형 메트릭 텍스트에 확실하게 강조하기 위해 대괄호 및 이모지 형태 추가 조합
+rent_label = "🏠 대여중 [N]" if has_recent_rent else "🏠 대여중"
+damage_label = "🚨 점검/분실 [N]" if has_recent_damage else "🚨 점검/분실"
 
-# 대시보드 지표 출력 (요청하신 글자 옆에 N 연동 완료)
+# 대시보드 지표 출력
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("전체 기기", f"{len(df)}대")
 col2.metric("🟢 정상", f"{len(df[df['상태']=='이상 없음'])}대")
