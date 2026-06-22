@@ -73,15 +73,6 @@ if 'filter_mode' not in st.session_state:
 def save_data():
     st.session_state.df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
 
-# --- 글로벌 타이틀 알림용 로직 (최근 5분) ---
-has_recent_update = False
-try:
-    times = pd.to_datetime(st.session_state.df['최종수정'], format="%Y-%m-%d %H:%M")
-    if datetime.now() - times.max() < timedelta(minutes=5):
-        has_recent_update = True
-except:
-    pass
-
 # --- UI 레이아웃 ---
 with st.sidebar:
     st.header("🏫 학급 선택")
@@ -108,40 +99,40 @@ with st.sidebar:
         target_id = st.selectbox("대상 크롬북(CEU)", device_options, format_func=lambda x: device_labels.get(x, x))
         current_row = st.session_state.df[st.session_state.df['기기번호'] == target_id].iloc[0]
         
-        # 상태에서 문자열 결합용 " N" 마크 정제 후 라디오 버튼 매칭
         clean_status = str(current_row['상태']).replace(" N", "")
         status_list = ["이상 없음", "대여 중", "파손/점검", "분실"]
         status_index = status_list.index(clean_status) if clean_status in status_list else 0
         
         new_status = st.radio("상태 변경", status_list, index=status_index)
         
-        if new_status == "대여 중":
-            if "반납예정일" not in str(current_row['특이사항']):
-                current_note_value = "[반납예정일: YYYY-MM-DD]"
-            else:
-                current_note_value = str(current_row['특이사항'])
-        else:
-            current_note_value = "" if current_row['특이사항'] == "-" else str(current_row['특이사항'])
+        # 💡 [개선 기능] placeholder를 활용해 클릭 시 글자가 자동으로 비워지도록 제어
+        placeholder_val = ""
+        current_note_value = str(current_row['특이사항']) if current_row['특이사항'] != "-" else ""
+        
+        if new_status == "대여 중" and "반납예정일" not in current_note_value:
+            placeholder_val = "[반납예정일: YYYY-MM-DD]"
+            current_note_value = "" # 값을 비워주어 placeholder가 작동하도록 유도
 
-        new_note = st.text_input("특이사항", value=current_note_value)
+        new_note = st.text_input("특이사항", value=current_note_value, placeholder=placeholder_val)
         
         if st.button("💾 변경사항 저장", use_container_width=True):
-            if new_status == "대여 중" and (not new_note or new_note == "[반납예정일: YYYY-MM-DD]"):
-                st.error("⚠️ 대여 중일 때는 반드시 정확한 반납 예정 날짜를 입력해야 합니다!")
+            # 입력 확인 단계
+            final_note = new_note if new_note else (placeholder_val if placeholder_val else "-")
+            if new_status == "대여 중" and not new_note:
+                st.error("⚠️ 대여 중일 때는 반드시 반납 예정 날짜를 입력해 주세요!")
             else:
                 idx = st.session_state.df[st.session_state.df['기기번호'] == target_id].index[0]
                 st.session_state.df.at[idx, '상태'] = new_status
-                st.session_state.df.at[idx, '특이사항'] = new_note if new_note else "-"
+                st.session_state.df.at[idx, '특이사항'] = final_note
                 st.session_state.df.at[idx, '최종수정'] = datetime.now().strftime("%Y-%m-%d %H:%M")
                 save_data()
                 st.success(f"{current_row['이름']} 학생 기기 수정 완료!")
                 st.rerun()
 
-st.title("💻 상북중 크롬북 통합 현황판" + (" (N)" if has_recent_update else ""))
+# 💡 대시보드 메인 타이틀 옆의 (N) 마크 영구 제거 완료
+st.title("💻 상북중 크롬북 통합 현황판")
 
 df = st.session_state.df.copy()
-
-# 카운트용 클린 데이터 정제
 df['상태_클린'] = df['상태'].str.replace(" N", "")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -158,19 +149,18 @@ if f2.button("🟢 정상만", use_container_width=True): st.session_state.filte
 if f3.button("🏠 대여중만", use_container_width=True): st.session_state.filter_mode = "대여 중"
 if f4.button("🚨 점검필요", use_container_width=True): st.session_state.filter_mode = "점검필요"
 
-# --- 🆕 개별 행 상태 옆에 " N" 마크 실시간 렌더링 ---
+# --- 표 내부 " N" 마크 노출 프로세스 ---
 view_df = df.copy()
 view_df['최종수정_dt'] = pd.to_datetime(view_df['최종수정'], format="%Y-%m-%d %H:%M")
 
 for idx, row in view_df.iterrows():
-    # 최종 수정 시점으로부터 5분 이내이면 " N" 추가
+    # 💡 수정한 지 5분 이내 데이터의 개별 상태 뒤에만 정확히 " N"을 붙여줌
     if datetime.now() - row['최종수정_dt'] < timedelta(minutes=5):
         if not str(row['상태']).endswith(" N"):
             view_df.at[idx, '상태'] = f"{row['상태_클린']} N"
     else:
         view_df.at[idx, '상태'] = row['상태_클린']
 
-# 필터링 적용
 if st.session_state.filter_mode == "이상 없음":
     view_df = view_df[view_df['상태_클린'] == "이상 없음"]
 elif st.session_state.filter_mode == "대여 중":
