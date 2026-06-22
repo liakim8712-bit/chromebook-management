@@ -105,7 +105,6 @@ with st.sidebar:
         
         new_status = st.radio("상태 변경", status_list, index=status_index)
         
-        # placeholder 가이드 글자 자동 비우기 로직
         placeholder_val = ""
         current_note_value = str(current_row['특이사항']) if current_row['특이사항'] != "-" else ""
         
@@ -131,32 +130,40 @@ with st.sidebar:
 st.title("💻 상북중 크롬북 통합 현황판")
 
 df = st.session_state.df.copy()
-
-# --- 대시보드용 실시간 N 마크 판단 로직 ---
 df['최종수정_dt'] = pd.to_datetime(df['최종수정'], format="%Y-%m-%d %H:%M")
 
 has_recent_rent = False
 has_recent_damage = False
 
 for idx, row in df.iterrows():
-    # 5분 이내에 수정 이력이 있는 기기 감지
     if datetime.now() - row['최종수정_dt'] < timedelta(minutes=5):
         if row['상태'] == "대여 중":
             has_recent_rent = True
         elif row['상태'] in ["파손/점검", "분실"]:
             has_recent_damage = True
 
-# 💡 대시보드 메트릭 라벨에 HTML 마크다운을 결합할 수 없으므로, 대신 이모지와 별도 텍스트 구성법 사용 
-# 대형 메트릭 텍스트에 확실하게 강조하기 위해 대괄호 및 이모지 형태 추가 조합
-rent_label = "🏠 대여중 [N]" if has_recent_rent else "🏠 대여중"
-damage_label = "🚨 점검/분실 [N]" if has_recent_damage else "🚨 점검/분실"
+# --- 💡 [핵심 변경] HTML 스타일을 사용해 강렬하고 진한 빨간색 N 마크 제작 ---
+def render_metric_card(title, value, show_n=False):
+    n_tag = '<span style="color:#e53e3e; font-weight:900; margin-left:6px; font-size:1.15rem; background-color:#ffebeb; padding:2px 6px; border-radius:4px;">N</span>' if show_n else ''
+    st.markdown(
+        f"""
+        <div style="background-color:fcfcfc; padding:15px; border-radius:10px; border:1px solid #eef2f6; box-shadow: 0px 2px 4px rgba(0,0,0,0.02);">
+            <div style="color:#6c757d; font-size:0.9rem; font-weight:600; display:flex; align-items:center;">
+                {title}{n_tag}
+            </div>
+            <div style="color:#1e293b; font-size:1.8rem; font-weight:700; margin-top:5px;">
+                {value}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-# 대시보드 지표 출력
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("전체 기기", f"{len(df)}대")
-col2.metric("🟢 정상", f"{len(df[df['상태']=='이상 없음'])}대")
-col3.metric(rent_label, f"{len(df[df['상태']=='대여 중'])}대")
-col4.metric(damage_label, f"{len(df[df['상태'].isin(['파손/점검', '분실'])])}대")
+with col1: render_metric_card("전체 기기", f"{len(df)}대")
+with col2: render_metric_card("🟢 정상", f"{len(df[df['상태']=='이상 없음'])}대")
+with col3: render_metric_card("🏠 대여중", f"{len(df[df['상태']=='대여 중'])}대", show_n=has_recent_rent)
+with col4: render_metric_card("🚨 점검/분실", f"{len(df[df['상태'].isin(['파손/점검', '분실'])])}대", show_n=has_recent_damage)
 
 st.divider()
 
