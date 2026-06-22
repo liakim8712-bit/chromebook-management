@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 st.set_page_config(page_title="상북중 크롬북 통합 관리", layout="wide")
@@ -51,7 +51,7 @@ RAW_DATA = [
     {"학번": "2101", "기기번호": "c062", "이름": "ANSHENGBIN"},
     {"학번": "2102", "기기번호": "c045", "이름": "곽고은"},
     {"학번": "2103", "기기번호": "c126", "이름": "김가림"},
-    {"학번": "2104", "기기번호": "c047", "I름": "김리안"}, # 자동 보정 처리됨
+    {"학번": "2104", "기기번호": "c047", "이름": "김리안"},
     {"학번": "2105", "기기번호": "c012", "이름": "김무성"},
     {"학번": "2106", "기기번호": "c038", "이름": "김미설"},
     {"학번": "2107", "기기번호": "c023", "이름": "김소현"},
@@ -72,7 +72,7 @@ RAW_DATA = [
     {"학번": "2122", "기기번호": "c055", "이름": "허동진"},
     {"학번": "2201", "기기번호": "c050", "이름": "강주원"},
     {"학번": "2202", "기기번호": "c071", "이름": "고대균"},
-    {"학번": "2203", "기기번호": "c043", "이름": "곽유찬"}, # 오타 수정 완료
+    {"학번": "2203", "기기번호": "c043", "이름": "곽유찬"},
     {"학번": "2204", "기기번호": "c058", "이름": "김건희"},
     {"학번": "2205", "기기번호": "c130", "이름": "김경은"},
     {"학번": "2206", "기기번호": "c074", "이름": "김대우"},
@@ -109,7 +109,7 @@ RAW_DATA = [
     {"학번": "3114", "기기번호": "c097", "이름": "이지우"},
     {"학번": "3115", "기기번호": "c120", "이름": "이지윤"},
     {"학번": "3116", "기기번호": "c083", "이름": "전서원"},
-    {"학번": "3117", "기기번호": "c116", "import": "정수연"},
+    {"학번": "3117", "기기번호": "c116", "이름": "정수연"},
     {"학번": "3118", "기기번호": "c004", "이름": "정아단"},
     {"학번": "3119", "기기번호": "c137", "이름": "진유빈"},
     {"학번": "3201", "기기번호": "c005", "이름": "KOONKOKKRUAD THANAWUT"},
@@ -143,9 +143,7 @@ def load_data():
         hb = item["학번"]
         cls_formatted = f"{hb[0]}-{hb[1]}"
         num_formatted = int(hb[2:])
-        
-        # 혹시 모를 다른 오타 데이터 방어 로직
-        name_val = item.get("이름", item.get("I름", "학생"))
+        name_val = item.get("이름", "학생")
         
         data.append({
             "기기번호": item["기기번호"],
@@ -168,6 +166,16 @@ if 'filter_mode' not in st.session_state:
 def save_data():
     st.session_state.df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
 
+# --- 🆕 대시보드 N 표시 판단 로직 (최근 5분 이내 업데이트 확인) ---
+has_recent_update = False
+try:
+    times = pd.to_datetime(st.session_state.df['최종수정'], format="%Y-%m-%d %H:%M")
+    most_recent = times.max()
+    if datetime.now() - most_recent < timedelta(minutes=5):
+        has_recent_update = True
+except:
+    pass
+
 # --- UI 레이아웃 ---
 with st.sidebar:
     st.header("🏫 학급 선택")
@@ -176,6 +184,7 @@ with st.sidebar:
     st.markdown(f"**[{active_cls}]** 전체 관리")
     if st.button(f"✨ {active_cls} 전원 '이상 없음' 초기화", use_container_width=True):
         st.session_state.df.loc[st.session_state.df['학급'] == active_cls, '상태'] = "이상 없음"
+        st.session_state.df.loc[st.session_state.df['학급'] == active_cls, '특이사항'] = "-"
         st.session_state.df.loc[st.session_state.df['학급'] == active_cls, '최종수정'] = datetime.now().strftime("%Y-%m-%d %H:%M")
         save_data()
         st.success(f"{active_cls} 학급 초기화 완료!")
@@ -190,24 +199,40 @@ with st.sidebar:
         device_options = cls_devices['기기번호'].tolist()
         device_labels = {row['기기번호']: f"[{row['기기번호']}] {row['번호']}번 {row['이름']}" for _, row in cls_devices.iterrows()}
         
+        target_id = st.selectbox("대상 크롬북(CEU)", device_options, format_func=lambda x: device_labels.get(x, x))
+        current_row = st.session_state.df[st.session_state.df['기기번호'] == target_id].iloc[0]
+        
+        # 폼 외부에서 라디오 버튼을 선언하여 상태 변화를 감지
+        new_status = st.radio("상태 변경", ["이상 없음", "대여 중", "파손/점검", "분실"], 
+                               index=["이상 없음", "대여 중", "파손/점검", "분실"].index(current_row['상태']) if current_row['상태'] in ["이상 없음", "대여 중", "파손/점검", "분실"] else 0)
+        
+        # 💡 [조건부 기본값] 상태가 '대여 중'이면 반납일자 서식을 기본값으로 채워줌
+        if new_status == "대여 중":
+            default_note = "[반납예정일: YYYY-MM-DD]" if current_row['특이사항'] in ["-", ""] or "반납" not in str(current_row['특이사항']) else str(current_row['특이사항'])
+        else:
+            default_note = str(current_row['특이사항']) if current_row['특이사항'] != "-" else ""
+
         with st.form("edit_form"):
-            target_id = st.selectbox("대상 크롬북(CEU)", device_options, format_func=lambda x: device_labels.get(x, x))
-            current_row = st.session_state.df[st.session_state.df['기기번호'] == target_id].iloc[0]
-            
-            new_status = st.radio("상태 변경", ["이상 없음", "대여 중", "파손/점검", "분실"], 
-                                   index=["이상 없음", "대여 중", "파손/점검", "분실"].index(current_row['상태']) if current_row['상태'] in ["이상 없음", "대여 중", "파손/점검", "분실"] else 0)
-            new_note = st.text_input("특이사항", value=str(current_row['특이사항']))
+            new_note = st.text_input("특이사항", value=default_note)
             
             if st.form_submit_button("변경사항 저장"):
-                idx = st.session_state.df[st.session_state.df['기기번호'] == target_id].index[0]
-                st.session_state.df.at[idx, '상태'] = new_status
-                st.session_state.df.at[idx, '특이사항'] = new_note if new_note else "-"
-                st.session_state.df.at[idx, '최종수정'] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                save_data()
-                st.success(f"{current_row['이름']} 학생 기기 수정 완료!")
-                st.rerun()
+                # 필수 입력 검증 (대여 중일 때 예시 양식을 그대로 두거나 비웠을 때 경고)
+                if new_status == "대여 중" and (not new_note or new_note == "[반납예정일: YYYY-MM-DD]"):
+                    st.error("⚠️ 대여 중일 때는 정확한 반납 예정 일자를 입력해 주세요!")
+                else:
+                    idx = st.session_state.df[st.session_state.df['기기번호'] == target_id].index[0]
+                    st.session_state.df.at[idx, '상태'] = new_status
+                    st.session_state.df.at[idx, '특이사항'] = new_note if new_note else "-"
+                    st.session_state.df.at[idx, '최종수정'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    save_data()
+                    st.success(f"{current_row['이름']} 학생 기기 수정 완료!")
+                    st.rerun()
 
-st.title("💻 상북중 크롬북 통합 현황판")
+# 🆕 타이틀 옆에 실시간 업데이트 확인 후 N(New) 아이콘 표시
+if has_recent_update:
+    st.title("💻 상북중 크롬북 통합 현황판 🆕")
+else:
+    st.title("💻 상북중 크롬북 통합 현황판")
 
 df = st.session_state.df
 col1, col2, col3, col4 = st.columns(4)
