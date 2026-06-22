@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(page_title="상북중 크롬북 통합 관리", layout="wide")
 
-# 대시보드 스타일 및 우측 상단 구글 챗 원형 버튼을 위한 커스텀 CSS
+# 대시보드 스타일 및 커스텀 CSS
 st.markdown(
     """
     <style>
@@ -40,33 +40,6 @@ st.markdown(
         margin-left: 8px;
         border: 1px solid #fed7d7;
         display: inline-block;
-    }
-    /* 💡 구글 챗 아이콘 버튼 스타일 정의 */
-    .google-chat-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background-color: #ffffff;
-        border: 1px solid #cbd5e1;
-        border-radius: 50px;
-        padding: 8px 16px;
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.06);
-        transition: transform 0.2s, box-shadow 0.2s;
-        cursor: pointer;
-        text-decoration: none !important;
-        float: right;
-        margin-top: 5px;
-    }
-    .google-chat-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0px 6px 15px rgba(0,0,0,0.1);
-        border-color: #1a73e8;
-    }
-    .chat-text {
-        color: #334155;
-        font-weight: 600;
-        font-size: 0.9rem;
-        margin-left: 8px;
     }
     </style>
     """,
@@ -195,24 +168,45 @@ with st.sidebar:
                 st.success(f"{current_row['이름']} 학생 기기 수정 완료!")
                 st.rerun()
 
-# --- 💡 대시보드 메인 화면 타이틀 및 우측 상단 구글 챗 배치 ---
+# --- 💡 메인 타이틀 및 우측 상단 모달/복사 구글 챗 시스템 ---
 title_col, chat_col = st.columns([3, 1])
 
 with title_col:
     st.markdown("<h1 style='margin-top:-5px; font-size:2rem;'>💻 상북중 크롬북 통합 현황판</h1>", unsafe_allow_html=True)
 
 with chat_col:
-    chat_url = "https://chat.google.com/dm/liakim87@ulsan-sangbuk.ms.kr"
-    # 둥근 플로팅 스타일의 구글 챗 정품 아이콘 탑재 버튼
-    st.markdown(
-        f"""
-        <a href="{chat_url}" target="_blank" class="google-chat-btn">
-            <img src="https://fonts.gstatic.com/s/i/productlogos/chat/v8/web-64dp.png" width="22" style="vertical-align: middle;">
-            <span class="chat-text">선생님께 메시지</span>
-        </a>
-        """,
-        unsafe_allow_html=True
-    )
+    # 스트림릿 내장 모달(popover)을 이용해 깔끔하게 구글 챗 아이콘 버튼 배치
+    with st.popover("💬 선생님께 메시지", use_container_width=True):
+        st.write("✏️ **선생님께 보낼 용건을 적어주세요.**")
+        student_info = st.text_input("보내는 사람 (학반 이름)", placeholder="예: 2-1 이대현")
+        issue_content = st.text_area("문의/신고 내용", placeholder="예: 크롬북 화면이 켜지지 않습니다.")
+        
+        chat_url = "https://chat.google.com/dm/liakim87@ulsan-sangbuk.ms.kr"
+        
+        if student_info and issue_content:
+            full_message = f"[{student_info} 크롬북 신고]\n{issue_content}"
+            
+            # 💡 [핵심 기술] 버튼 클릭 시 사용자가 입력한 메시지를 클립보드에 자동 복사하는 JavaScript 삽입
+            st.components.v1.html(
+                f"""
+                <script>
+                function copyToClipboard() {{
+                    const text = `{full_message}`;
+                    navigator.clipboard.writeText(text).then(function() {{
+                        window.open("{chat_url}", "_blank");
+                    }});
+                }}
+                </script>
+                <button onclick="copyToClipboard()" style="width:100%; padding:10px; background-color:#1a73e8; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center;">
+                    <img src="https://fonts.gstatic.com/s/i/productlogos/chat/v8/web-64dp.png" width="18" style="margin-right:8px;">
+                    메시지 복사 후 구글챗 열기
+                </button>
+                """,
+                height=45
+            )
+            st.caption("💡 버튼을 누르면 내용이 자동 복사되며 대화방이 열립니다. 창이 뜨면 **Ctrl + V(붙여넣기)**를 눌러 전송하세요!")
+        else:
+            st.info("이름과 내용을 적으면 구글 챗 전송 버튼이 나타납니다.")
 
 df = st.session_state.df.copy()
 df['최종수정_dt'] = pd.to_datetime(df['최종수정'], format="%Y-%m-%d %H:%M")
