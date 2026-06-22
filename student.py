@@ -5,6 +5,47 @@ import os
 
 st.set_page_config(page_title="상북중 크롬북 통합 관리", layout="wide")
 
+# 대시보드 전반의 글자 크기와 스타일을 깔끔하게 잡아주는 커스텀 CSS
+st.markdown(
+    """
+    <style>
+    .metric-card {
+        background-color: #ffffff;
+        padding: 18px;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.02);
+        margin-bottom: 10px;
+    }
+    .metric-title {
+        color: #4a5568;
+        font-size: 1rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+    }
+    .metric-value {
+        color: #1a202c;
+        font-size: 2rem;
+        font-weight: 700;
+        margin-top: 8px;
+    }
+    .new-badge {
+        color: #e53e3e !important;
+        font-weight: 900 !important;
+        font-size: 1.2rem !important;
+        background-color: #fff5f5;
+        padding: 2px 8px;
+        border-radius: 6px;
+        margin-left: 8px;
+        border: 1px solid #fed7d7;
+        display: inline-block;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 DB_FILE = "chromebook_master_db.csv"
 CLASSES = ["1-1", "1-2", "2-1", "2-2", "3-1", "3-2"]
 
@@ -71,4 +112,143 @@ if 'filter_mode' not in st.session_state:
     st.session_state.filter_mode = "전체"
 
 def save_data():
-    st.
+    st.session_state.df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
+
+# --- UI 레이아웃 ---
+with st.sidebar:
+    st.header("🏫 학급 선택")
+    active_cls = st.selectbox("조회/관리할 학급", CLASSES)
+    
+    st.markdown(f"**[{active_cls}]** 전체 관리")
+    if st.button(f"✨ {active_cls} 전원 '이상 없음' 초기화", use_container_width=True):
+        st.session_state.df.loc[st.session_state.df['학급'] == active_cls, '상태'] = "이상 없음"
+        st.session_state.df.loc[st.session_state.df['학급'] == active_cls, '특이사항'] = "-"
+        st.session_state.df.loc[st.session_state.df['학급'] == active_cls, '최종수정'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        save_data()
+        st.success(f"{active_cls} 학급 초기화 완료!")
+        st.rerun()
+    
+    st.divider()
+    
+    st.header("🛠️ 개별 상태 수정")
+    cls_devices = st.session_state.df[st.session_state.df['학급'] == active_cls]
+    
+    if not cls_devices.empty:
+        device_options = cls_devices['기기번호'].tolist()
+        device_labels = {row['기기번호']: f"[{row['기기번호']}] {row['번호']}번 {row['이름']}" for _, row in cls_devices.iterrows()}
+        
+        target_id = st.selectbox("대상 크롬북(CEU)", device_options, format_func=lambda x: device_labels.get(x, x))
+        current_row = st.session_state.df[st.session_state.df['기기번호'] == target_id].iloc[0]
+        
+        new_status = str(current_row['상태'])
+        status_list = ["이상 없음", "대여 중", "파손/점검", "분실"]
+        status_index = status_list.index(new_status) if new_status in status_list else 0
+        
+        new_status = st.radio("상태 변경", status_list, index=status_index)
+        
+        placeholder_val = ""
+        current_note_value = str(current_row['특이사항']) if current_row['특이사항'] != "-" else ""
+        
+        if new_status == "대여 중" and "반납예정일" not in current_note_value:
+            placeholder_val = "[반납예정일: YYYY-MM-DD]"
+            current_note_value = "" 
+
+        new_note = st.text_input("특이사항", value=current_note_value, placeholder=placeholder_val)
+        
+        if st.button("💾 변경사항 저장", use_container_width=True):
+            final_note = new_note if new_note else (placeholder_val if placeholder_val else "-")
+            if new_status == "대여 중" and not new_note:
+                st.error("⚠️ 대여 중일 때는 반드시 반납 예정 날짜를 입력해 주세요!")
+            else:
+                idx = st.session_state.df[st.session_state.df['기기번호'] == target_id].index[0]
+                st.session_state.df.at[idx, '상태'] = new_status
+                st.session_state.df.at[idx, '특이사항'] = final_note
+                st.session_state.df.at[idx, '최종수정'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                save_data()
+                st.success(f"{current_row['이름']} 학생 기기 수정 완료!")
+                st.rerun()
+
+# --- 타이틀 및 우측 상단 구글 챗 버튼 레이아웃 ---
+title_col, chat_btn_col = st.columns([7, 2])
+
+with title_col:
+    st.markdown("<h1 style='margin-top:-10px;'>💻 크롬북 통합 현황판</h1>", unsafe_allow_html=True)
+
+with chat_btn_col:
+    chat_url = "https://chat.google.com/dm/liakim87@ulsan-sangbuk.ms.kr"
+    st.markdown(
+        f"""
+        <a href="{chat_url}" target="_blank" style="text-decoration: none;">
+            <div style="display: flex; align-items: center; justify-content: center; background-color: #ffffff; color: #1a73e8; border: 2px solid #1a73e8; border-radius: 8px; padding: 6px 10px; font-weight: 600; font-size: 0.85rem; box-shadow: 0px 2px 4px rgba(0,0,0,0.05); margin-top: 10px;">
+                <img src="https://fonts.gstatic.com/s/i/productlogos/chat/v8/web-64dp.png" width="18" style="margin-right: 6px; vertical-align: middle;">
+                담당 교사 대화방
+            </div>
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
+
+df = st.session_state.df.copy()
+df['최종수정_dt'] = pd.to_datetime(df['최종수정'], format="%Y-%m-%d %H:%M")
+
+has_recent_rent = False
+has_recent_damage = False
+
+for idx, row in df.iterrows():
+    if datetime.now() - row['최종수정_dt'] < timedelta(minutes=5):
+        if row['상태'] == "대여 중":
+            has_recent_rent = True
+        elif row['상태'] in ["파손/점검", "분실"]:
+            has_recent_damage = True
+
+# --- 💡 카드 렌더링 함수 보정 ---
+def render_metric_card(title, value, show_n=False):
+    n_tag = '<span class="new-badge">N</span>' if show_n else ''
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="metric-title">{title}{n_tag}</div>
+            <div class="metric-value">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+col1, col2, col3, col4 = st.columns(4)
+with col1: render_metric_card("전체 기기", f"{len(df)}대")
+with col2: render_metric_card("🟢 정상", f"{len(df[df['상태']=='이상 없음'])}대")
+with col3: render_metric_card("🏠 대여중", f"{len(df[df['상태']=='대여 중'])}대", show_n=has_recent_rent)
+with col4: render_metric_card("🚨 점검/분실", f"{len(df[df['상태'].isin(['파손/점검', '분실'])])}대", show_n=has_recent_damage)
+
+st.divider()
+
+f1, f2, f3, f4, _ = st.columns([1,1,1,1,2])
+if f1.button("전체 보기", use_container_width=True): st.session_state.filter_mode = "전체"
+if f2.button("🟢 정상만", use_container_width=True): st.session_state.filter_mode = "이상 없음"
+if f3.button("🏠 대여중만", use_container_width=True): st.session_state.filter_mode = "대여 중"
+if f4.button("🚨 점검필요", use_container_width=True): st.session_state.filter_mode = "점검필요"
+
+# 필터링 적용 및 테이블 노출
+view_df = df.copy()
+if st.session_state.filter_mode == "이상 없음":
+    view_df = view_df[view_df['상태'] == "이상 없음"]
+elif st.session_state.filter_mode == "대여 중":
+    view_df = view_df[view_df['상태'] == "대여 중"]
+elif st.session_state.filter_mode == "점검필요":
+    view_df = view_df[view_df['상태'].isin(["파손/점검", "분실"])]
+
+view_df = view_df[["기기번호", "학급", "번호", "이름", "상태", "특이사항", "최종수정"]]
+
+def style_status(row):
+    color = ''
+    if row['상태'] == "이상 없음": color = 'background-color: #f0fff4; color: #22543d'
+    elif row['상태'] == "대여 중": color = 'background-color: #ebf8ff; color: #2a4365'
+    elif row['상태'] in ["파손/점검", "분실"]: color = 'background-color: #fff5f5; color: #742a2a; font-weight: bold'
+    return [color] * len(row)
+
+st.dataframe(
+    view_df.style.apply(style_status, axis=1), 
+    use_container_width=True, 
+    hide_index=True,
+    height=600
+)
